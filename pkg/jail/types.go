@@ -223,7 +223,13 @@ func typeOf(name string) (ptype, error) {
 func resolveType(name string) (t ptype, cacheable bool, err error) {
 	ctl, format, n, err := resolver(name)
 	if err == nil {
-		return parseType(ctl, format, n), true, nil
+		t := parseType(ctl, format, n)
+		if st, ok := staticTypes[name]; ok && t.class == clNode {
+			// A group (ip4, vnet...) whose describing child could not be
+			// found: the built-in definition is better than "node".
+			return st, false, nil
+		}
+		return t, true, nil
 	}
 	if !errors.Is(err, syscall.ENOENT) {
 		// Discovery is unavailable (not "no such parameter"): degrade to

@@ -258,6 +258,9 @@ const (
 
 type getFunc func(entries []entry, flags int) (int, error)
 
+// doGet is the jail_get call used by query; tests replace it.
+var doGet getFunc = sysGet
+
 // getWithRetry runs get over entries, whose first nl items are the lookup.
 // Variable-length (probe) entries are sized with a throwaway call first,
 // then fetched with arraySlop extra elements; if the kernel answers EINVAL
@@ -307,7 +310,21 @@ func query(flags Flags, lookup []entry, names []string) (Params, int, *Desc, err
 	wantDesc := flags&(FlagGetDesc|FlagOwnDesc) != 0
 	nl := len(lookup)
 	entries := append([]entry(nil), lookup...)
+	selector := make(map[string]entry, nl)
+	for _, l := range lookup {
+		selector[l.name] = l
+	}
+	// The kernel reads every parameter in the call as input first, so a
+	// selector such as "jid" must not also be sent as an empty output
+	// buffer: that would replace the selector. Such names are answered from
+	// the lookup instead.
+	var fromSelector []string
 	for _, n := range names {
+		// jail_get returns the jid, so "jid" never needs a buffer either.
+		if _, ok := selector[n]; ok || n == "jid" {
+			fromSelector = append(fromSelector, n)
+			continue
+		}
 		e, err := readEntry(n)
 		if err != nil {
 			return nil, -1, nil, err
@@ -318,7 +335,7 @@ func query(flags Flags, lookup []entry, names []string) (Params, int, *Desc, err
 	if wantDesc {
 		entries = append(entries, entry{name: "desc", val: make([]byte, 4)})
 	}
-	jid, err := getWithRetry(sysGet, nl, entries, flags)
+	jid, err := getWithRetry(doGet, nl, entries, flags)
 	if err != nil {
 		return nil, -1, nil, err
 	}
@@ -335,6 +352,18 @@ func query(flags Flags, lookup []entry, names []string) (Params, int, *Desc, err
 			return nil, -1, nil, err
 		}
 		out[e.name] = v
+	}
+	for _, n := range fromSelector {
+		switch n {
+		case "jid":
+			out[n] = jid
+		case "lastjid", "desc":
+			// input only
+		default:
+			if v, err := decode(n, selector[n].val); err == nil {
+				out[n] = v
+			}
+		}
 	}
 	return out, jid, desc, nil
 }

@@ -110,14 +110,21 @@ func TestLifecycle(t *testing.T) {
 
 func TestErrorCarriesKernelMessage(t *testing.T) {
 	needRoot(t)
-	_, err := Create(Params{"name": "gojail_bad", "path": "/nonexistent/dir"})
+	// Not every failure has a message (a missing path is a bare ENOENT),
+	// but a lookup of a missing jail does.
+	_, err := GetByName("gojail_does_not_exist", "jid")
 	var je *Error
 	if !errors.As(err, &je) {
 		t.Fatalf("err = %v, want *Error", err)
 	}
 	t.Logf("kernel said: %v", je)
-	if je.Msg == "" {
-		t.Error("expected the kernel's errmsg text")
+	if je.Msg == "" || !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("want ENOENT with the kernel's errmsg, got %+v", je)
+	}
+
+	_, err = Create(Params{"name": "gojail_bad", "path": "/nonexistent/dir"})
+	if !errors.As(err, &je) || !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Create with a missing path: %v, want ENOENT *Error", err)
 	}
 }
 
@@ -374,6 +381,14 @@ func TestDiscoveryUsesKernel(t *testing.T) {
 			t.Errorf("%s = %+v, want %s array=%v", name, pi, want.typ, want.array)
 		}
 	}
+	// Groups such as ip4 are described by an empty-named child. Ask the
+	// kernel directly so the static table cannot hide a broken lookup.
+	for _, n := range []string{"ip4", "ip6"} {
+		kind, format, _, err := resolveFromSysctl(n)
+		if err != nil || kind&ctlMask == ctlNode {
+			t.Errorf("%s: kind %#x format %q err %v: node not resolved to its child", n, kind, format, err)
+		}
+	}
 	if pi, _ := DescribeParam("host.hostname"); pi.Size <= 0 {
 		t.Errorf("string size not discovered: %+v", pi)
 	}
@@ -398,7 +413,7 @@ func TestListParams(t *testing.T) {
 		}
 	}
 	t.Logf("%d parameters", len(infos))
-	for _, n := range []string{"jid", "name", "path", "host.hostname", "ip4.addr", "ip6.addr", "allow.chflags", "persist", "securelevel", "vnet", "parent"} {
+	for _, n := range []string{"jid", "name", "path", "host.hostname", "ip4.addr", "ip6.addr", "ip4", "ip6", "allow.chflags", "persist", "securelevel", "vnet", "parent"} {
 		if _, ok := have[n]; !ok {
 			t.Errorf("%s missing from ListParams", n)
 		}
@@ -501,4 +516,23 @@ func TestArrayRace(t *testing.T) {
 		t.Fatalf("Update: %v", err)
 	}
 	t.Logf("%d reads without error", reads)
+}
+
+// Selectors must not be sent as output buffers too: Get with no names asks
+// for jid and name by default.
+func TestGetDefaultsAndSelectors(t *testing.T) {
+	needRoot(t)
+	jid := create(t, "gojail_defaults", t.TempDir(), Params{"host.hostname": "defaults.test"})
+
+	p, err := Get(jid)
+	if err != nil {
+		t.Fatalf("Get(jid) with default names: %v", err)
+	}
+	if p["jid"] != jid || p["name"] != "gojail_defaults" || p["host.hostname"] != "defaults.test" {
+		t.Errorf("Get(jid) = %v", p)
+	}
+	p, err = GetByName("gojail_defaults", "jid", "name", "path")
+	if err != nil || p["jid"] != jid || p["name"] != "gojail_defaults" {
+		t.Errorf("GetByName asking for its own selectors = %v, %v", p, err)
+	}
 }

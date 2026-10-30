@@ -403,3 +403,63 @@ func TestIPDecodeUsesReturnedLength(t *testing.T) {
 		t.Errorf("decode = %v, %v", v, err)
 	}
 }
+
+func TestNodeFallsBackToStaticWhenChildNotFound(t *testing.T) {
+	withResolver(t, map[string]fakeEntry{"ip4": {ctlNode, "N", 0}, "allow": {ctlNode, "N", 0}}, nil)
+
+	tt, err := typeOf("ip4")
+	if err != nil || tt.class != clInt || !tt.jailsys {
+		t.Errorf("ip4 = %+v, %v; want the static jailsys definition", tt, err)
+	}
+	if tt, _ := typeOf("allow"); tt.class != clNode {
+		t.Errorf("a group without a static entry stays a node: %+v", tt)
+	}
+}
+
+func TestQueryNeverRepeatsASelector(t *testing.T) {
+	old := doGet
+	t.Cleanup(func() { doGet = old })
+	var sent []string
+	doGet = func(entries []entry, flags int) (int, error) {
+		sent = nil
+		for _, e := range entries {
+			sent = append(sent, e.name)
+		}
+		for i, e := range entries {
+			if e.name == "host.hostname" {
+				copy(entries[i].val, "h.test\x00")
+			}
+		}
+		return 9, nil
+	}
+
+	lookup, _ := encode(Params{"jid": 9})
+	p, jid, _, err := query(0, lookup, []string{"jid", "name", "host.hostname"})
+	if err != nil || jid != 9 {
+		t.Fatalf("jid = %d, err = %v", jid, err)
+	}
+	count := map[string]int{}
+	for _, n := range sent {
+		count[n]++
+	}
+	if count["jid"] != 1 {
+		t.Errorf("jid sent %d times (%v): it would replace the selector", count["jid"], sent)
+	}
+	if p["jid"] != 9 || p["host.hostname"] != "h.test" {
+		t.Errorf("result = %v", p)
+	}
+
+	// Selecting by name and asking for the name back is answered locally.
+	lookup, _ = encode(Params{"name": "web"})
+	p, _, _, err = query(0, lookup, []string{"name", "jid"})
+	if err != nil || p["name"] != "web" || p["jid"] != 9 {
+		t.Errorf("by name = %v, %v", p, err)
+	}
+	count = map[string]int{}
+	for _, n := range sent {
+		count[n]++
+	}
+	if count["name"] != 1 {
+		t.Errorf("name sent %d times: %v", count["name"], sent)
+	}
+}

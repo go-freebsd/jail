@@ -120,23 +120,34 @@ func oidFmt(oid []int32) (kind uint32, format string, err error) {
 }
 
 // emptyChild finds the empty-named child that describes a node parameter
-// such as "ip4": the OID just before or after the node, named
-// "security.jail.param.<name>.".
+// such as "ip4", named "security.jail.param.<name>.". Every candidate is
+// verified by its name, so a wrong guess about the OID layout is harmless.
 func emptyChild(oid []int32, name string) ([]int32, error) {
 	want := paramPrefix + "." + name + "."
-	for _, d := range []int32{-1, 1} {
-		cand := slices.Clone(oid)
-		cand[len(cand)-1] += d
+	check := func(cand []int32) bool {
 		got, err := oidName(cand)
-		if errors.Is(err, syscall.ENOENT) {
-			continue
+		return err == nil && got == want
+	}
+	// By name, with the trailing dot selecting the empty component.
+	if cand, err := name2oid(want); err == nil && check(cand) {
+		return cand, nil
+	}
+	last := oid[len(oid)-1]
+	for _, d := range []int32{-1, 1} {
+		// A neighbour of the node.
+		sib := slices.Clone(oid)
+		sib[len(sib)-1] = last + d
+		if check(sib) {
+			return sib, nil
 		}
-		if err != nil {
-			return nil, err
+		// A child numbered next to the node's own number (libjail's probe).
+		if child := append(slices.Clone(oid), last+d); check(child) {
+			return child, nil
 		}
-		if got == want {
-			return cand, nil
-		}
+	}
+	// The node's first descendant in tree order.
+	if next, err := nextOID(oid); err == nil && check(next) {
+		return next, nil
 	}
 	return nil, syscall.ENOENT
 }

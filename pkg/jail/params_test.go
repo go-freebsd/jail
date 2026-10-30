@@ -13,7 +13,7 @@ func TestEncode(t *testing.T) {
 		"securelevel":       3,
 		"persist":           true,
 		"allow.raw_sockets": false,
-		"nopersist_unused":  "x", // unknown names are strings
+		"host.hostname":     "x",
 		"ip4.addr":          []netip.Addr{netip.MustParseAddr("10.0.0.1"), netip.MustParseAddr("10.0.0.2")},
 		"host.hostid":       uint64(7),
 	}
@@ -27,7 +27,7 @@ func TestEncode(t *testing.T) {
 		got[e.name] = e.val
 		order = append(order, e.name)
 	}
-	want := []string{"allow.noraw_sockets", "host.hostid", "ip4.addr", "name", "nopersist_unused", "persist", "securelevel"}
+	want := []string{"allow.noraw_sockets", "host.hostid", "host.hostname", "ip4.addr", "name", "persist", "securelevel"}
 	if !reflect.DeepEqual(order, want) {
 		t.Fatalf("names/order = %v, want %v", order, want)
 	}
