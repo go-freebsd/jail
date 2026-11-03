@@ -1,11 +1,22 @@
 # jail
 
-Pure-Go (no cgo, no `-ljail`) access to FreeBSD jails via `jail_set(2)`,
-`jail_get(2)`, `jail_attach(2)` and `jail_remove(2)`. Builds on any OS;
-operations return `jail.ErrUnsupported` off FreeBSD.
+Access to FreeBSD jails via `jail_set(2)`, `jail_get(2)`, `jail_attach(2)`
+and `jail_remove(2)`. Builds on any OS; operations return
+`jail.ErrUnsupported` off FreeBSD.
+
+Two interchangeable backends, selected by the Go toolchain:
+
+- `CGO_ENABLED=1` (default when building natively on FreeBSD): uses libc and
+  `libjail` (`-ljail`). Parameter types and names come from the kernel through
+  `jailparam_init`/`jailparam_all`.
+- `CGO_ENABLED=0` (also used for cross-compiling): pure Go, raw syscalls and a
+  sysctl walk for parameter types. No C toolchain needed.
+
+The import path was `github.com/go-freebsd/jail/pkg/jail` in earlier
+revisions; the package now lives at the module root.
 
 ```go
-import "github.com/go-freebsd/jail/pkg/jail"
+import "github.com/go-freebsd/jail"
 
 jid, err := jail.Create(jail.Params{
 	"name":          "web",

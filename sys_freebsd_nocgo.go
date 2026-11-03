@@ -1,4 +1,4 @@
-//go:build freebsd
+//go:build freebsd && !cgo
 
 package jail
 
@@ -8,14 +8,9 @@ import (
 	"unsafe"
 )
 
-const errmsgSize = 1024
+// Pure-Go backend: raw system calls, no libc or libjail involved.
 
-func cstr(b []byte) string {
-	if i := indexNUL(b); i >= 0 {
-		b = b[:i]
-	}
-	return string(b)
-}
+func init() { resolver = resolveFromSysctl }
 
 // iovecs lays out entries as the name/value iovec pairs jail_set(2) and
 // jail_get(2) expect, followed by an "errmsg" buffer.
@@ -79,29 +74,6 @@ func sysAttach(jid int) error {
 	}
 	return nil
 }
-
-// Jail descriptor syscalls (FreeBSD 15). Go's syscall package predates
-// them, so the numbers come from sys/kern/syscalls.master.
-const (
-	sysJailAttachJD = 597
-	sysJailRemoveJD = 598
-)
-
-func sysAttachJD(fd int) error {
-	if _, _, e := syscall.Syscall(sysJailAttachJD, uintptr(fd), 0, 0); e != 0 {
-		return &Error{Op: "jail_attach_jd", Errno: e}
-	}
-	return nil
-}
-
-func sysRemoveJD(fd int) error {
-	if _, _, e := syscall.Syscall(sysJailRemoveJD, uintptr(fd), 0, 0); e != 0 {
-		return &Error{Op: "jail_remove_jd", Errno: e}
-	}
-	return nil
-}
-
-func sysClose(fd int) error { return syscall.Close(fd) }
 
 // cJail is the legacy struct jail, JAIL_API_VERSION 2 (<sys/jail.h>).
 type cJail struct {
