@@ -9,6 +9,7 @@ package jail
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <sys/socket.h>
+#include <sys/sysctl.h>
 #include <sys/jail.h>
 #include <netinet/in.h>
 #include <errno.h>
@@ -62,9 +63,9 @@ static int gj_type(const char *name, struct gjtype *t) {
 		t->kind = 1;
 	else if (jp.jp_flags & JP_JAILSYS)
 		t->kind = 2;
-	else if (jp.jp_structtype == JPS_IN_ADDR)
+	else if (jp.jp_ctltype == CTLTYPE_OPAQUE && jp.jp_elemlen == sizeof(struct in_addr))
 		t->kind = 3;
-	else if (jp.jp_structtype == JPS_IN6_ADDR)
+	else if (jp.jp_ctltype == CTLTYPE_OPAQUE && jp.jp_elemlen == sizeof(struct in6_addr))
 		t->kind = 4;
 	jailparam_free(&jp, 1);
 	return 0;
@@ -228,8 +229,8 @@ func resolveFromLibjail(name string) (uint32, string, int, error) {
 	case 4:
 		format = "S,in6_addr"
 	}
-	if t.elemlen != 0 && format != "" {
-		format += ",a"
+	if t.kind == 3 || t.kind == 4 {
+		format += ",a" // address lists are the only arrays
 	}
 	strLen := 0
 	if uint32(t.ctltype)&ctlMask == ctlString {
