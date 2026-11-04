@@ -17,22 +17,26 @@ jobs:
       - run: go test ./...
       - name: Cross-compile for FreeBSD
         run: |
-          GOOS=freebsd GOARCH=amd64 go vet ./...
-          GOOS=freebsd GOARCH=arm64 go vet ./...
-          GOOS=freebsd GOARCH=amd64 go test -c -o /dev/null ./pkg/jail
+          CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go vet ./...
+          CGO_ENABLED=0 GOOS=freebsd GOARCH=arm64 go vet ./...
+          CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go test -c -o /dev/null .
 
   freebsd:
-    name: FreeBSD ${{ matrix.release }} (real jails)
+    name: FreeBSD ${{ matrix.release }} cgo=${{ matrix.cgo }} (real jails)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         release: ["14.3", "15.0"]
+        cgo: ["0", "1"]
     steps:
       - uses: actions/checkout@v4
       - name: Test in FreeBSD VM
         uses: vmactions/freebsd-vm@v1
+        env:
+          CGO_ENABLED: ${{ matrix.cgo }}
         with:
+          envs: CGO_ENABLED
           release: ${{ matrix.release }}
           usesh: true
           prepare: |

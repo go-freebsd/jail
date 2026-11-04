@@ -27,8 +27,6 @@ const (
 	sysctlSlackSize = 16
 )
 
-func init() { resolver = resolveFromSysctl }
-
 // sysctl is a raw __sysctl(2) call. With old == nil it reports the size
 // needed.
 func sysctl(mib []int32, old, newp []byte) (int, error) {
