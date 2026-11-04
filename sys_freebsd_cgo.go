@@ -63,10 +63,15 @@ static int gj_type(const char *name, struct gjtype *t) {
 		t->kind = 1;
 	else if (jp.jp_flags & JP_JAILSYS)
 		t->kind = 2;
-	else if (jp.jp_ctltype == CTLTYPE_OPAQUE && jp.jp_elemlen == sizeof(struct in_addr))
-		t->kind = 3;
-	else if (jp.jp_ctltype == CTLTYPE_OPAQUE && jp.jp_elemlen == sizeof(struct in6_addr))
-		t->kind = 4;
+	else if ((jp.jp_ctltype & CTLTYPE) == CTLTYPE_OPAQUE) {
+		// The only opaque jail parameters are address lists, but libjail does
+		// not export which kind. Ask it: only the matching type accepts the
+		// literal.
+		if (jailparam_import(&jp, "127.0.0.1") == 0)
+			t->kind = 3;
+		else if (jailparam_import(&jp, "::1") == 0)
+			t->kind = 4;
+	}
 	jailparam_free(&jp, 1);
 	return 0;
 }
@@ -147,7 +152,12 @@ func jailCall(op string, get bool, entries []entry, flags int) (int, error) {
 		switch {
 		case e.probe:
 			entries[i].val = make([]byte, l)
-		case get && data[i] != nil:
+		case data[i] != nil:
+			// jail_set also writes results into values (the "desc" output of
+			// FlagGetDesc/FlagOwnDesc), so copy back in both directions.
+			if !get {
+				l = len(e.val)
+			}
 			if l > len(e.val) {
 				l = len(e.val)
 			}
